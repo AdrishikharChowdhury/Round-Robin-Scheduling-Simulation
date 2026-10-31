@@ -18,7 +18,7 @@ public class Task {
 
     void execute() {
         Timer timer;
-        boolean taskNearOver = this.quantum > this.time ? false : true;
+        boolean taskNearOver = this.quantum < this.time ? false : true;
         double time = taskNearOver ? this.time : this.quantum;
 
         timer = new Timer(time);
@@ -28,7 +28,6 @@ public class Task {
             time / 1000
         );
         timer.run();
-
         this.isCompleted = taskNearOver ? true : false;
     }
 }
