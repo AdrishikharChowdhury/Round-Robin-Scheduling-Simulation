@@ -1,31 +1,28 @@
-/**
- * Task
- */
 public class Task {
 
     final String title;
-    int time, quantum;
+    double time, quantum;
 
-    public Task(String title, int time, int quantum) {
+    public Task(String title, double time, double quantum) {
         this.title = title;
         this.time = time * 1000;
         this.quantum = quantum * 1000;
         System.out.printf(
-            "The Task is %s and set for %d seconds\n",
+            "The Task is %s and set for %.2f seconds\n",
             title,
             time
         );
     }
 
     void execute() {
-        Timer t1;
-        t1 = new Timer(this.quantum);
-        System.out.println(
-            this.title +
-                " task is started and running for " +
-                this.quantum / 1000 +
-                " seconds"
+        Timer timer;
+        double time = this.quantum > this.time ? this.time : this.quantum;
+        timer = new Timer(time);
+        System.out.printf(
+            "%s task is started and running for %.2f seconds\n",
+            this.title,
+            time/1000
         );
-        t1.run();
+        timer.run();
     }
 }

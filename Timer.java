@@ -1,16 +1,16 @@
 class Timer implements Runnable {
 
-    int sec;
+    double sec;
 
-    Timer(int sec) {
+    Timer(double sec) {
         this.sec = sec;
-        System.out.printf("Timer set for %d seconds\n", sec);
+        System.out.printf("Timer set for %.2f seconds\n", sec/1000);
     }
 
     @Override
     public void run() {
         try {
-            Thread.sleep(this.sec);
+            Thread.sleep((long) this.sec);
             System.out.println("Timer Ended");
         } catch (InterruptedException e) {
             System.out.println("Timer Interrupted");
