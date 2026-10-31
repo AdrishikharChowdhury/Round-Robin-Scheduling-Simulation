@@ -39,7 +39,7 @@ class Main {
 
         do {
             taskQueue = create(taskQueue);
-            System.out.print("Do you want to add more?: (Y/n)");
+            System.out.print("Do you want to add more? (Y/n): ");
             choice = sc.nextLine();
             isRunning =
                 choice.startsWith("Y") || choice.startsWith("y") ? true : false;
@@ -50,15 +50,16 @@ class Main {
 
         System.out.println("Now lets start the simulation");
 
-        for (Task task : taskQueue) {
+        while (!taskQueue.isEmpty()) {
+            Task task = taskQueue.poll();
+
             task.execute();
 
             if (!task.isCompleted) {
                 task.time -= task.quantum;
                 Task newTask = task;
-                taskQueue.add(newTask);
+                taskQueue.offer(newTask);
             }
-            taskQueue.remove(task);
         }
     }
 }

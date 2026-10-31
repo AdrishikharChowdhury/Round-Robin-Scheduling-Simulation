@@ -1,64 +1,75 @@
 # Bugs — Round Robin Scheduling Simulation
 
-**Status:** Compiles, but does not perform round-robin scheduling. The quantum is never enforced correctly, and tasks can be left unfinished.
+**Status:** No known critical bugs. Slicing and completion logic are correct, and the scheduler now drains the queue by re-queueing incomplete tasks with `poll()` / `offer()`.
 
-**Verified on:** OpenJDK 27, with tasks `A = 1s`, `B = 2s` (computed quantum = 1.5s)
-
-| Task | Quantum | Expected slice | Actual slice | Outcome |
-|------|---------|----------------|--------------|---------|
-| A | 1.5s | 1.0s | 1.5s | Overran, marked incomplete, left in queue |
-| B | 2.0s | 1.5s | 2.0s | No preemption, marked complete |
+**Verified on:** OpenJDK 27.
 
 ---
 
-## Critical
+## Verification
 
-### 1. Quantum is never enforced — slice logic is inverted
+### Test 1 — A = 1s, B = 2s (quantum = 1.5s)
+
+| Order | Task | Slice | Remaining | Result |
+|-------|------|-------|-----------|--------|
+| 1 | A | 1.0s | 0 | Completed |
+| 2 | B | 1.5s | 0.5s | Re-queued |
+| 3 | B | 0.5s | 0 | Completed |
+
+### Test 2 — A = 3s, B = 1s, C = 2s (quantum = 2.0s)
+
+| Order | Task | Slice | Remaining | Result |
+|-------|------|-------|-----------|--------|
+| 1 | A | 2.0s | 1.0s | Re-queued |
+| 2 | B | 1.0s | 0 | Completed |
+| 3 | C | 2.0s | 0 | Completed |
+| 4 | A | 1.0s | 0 | Completed |
+
+The queue is empty after both runs, and the execution order is correct round-robin.
+
+---
+
+## Fixed
+
+### 1. ~~Slice logic inverted~~ — FIXED
 - **Location:** `Task.java:21-22`
-- `taskNearOver` evaluates to `quantum <= time`, i.e. `true` when the task needs **more** time.
-- The slice is then `this.time` for long tasks (runs to completion, no preemption) and `this.quantum` for short tasks (runs longer than the task exists).
-- The quantum is never used as a cap; only equality behaves correctly.
-- **Fix:** `double slice = Math.min(this.time, this.quantum);`
+- `taskNearOver` is now true when `quantum >= time`.
+- The slice is remaining time when the task fits, otherwise the quantum: effectively `min(time, quantum)`.
 
-### 2. Completion flag is inverted
-- **Location:** `Task.java:32`
-- `isCompleted` is set from `taskNearOver`, so it becomes `true` when `quantum <= time` — exactly when the task still has work left.
-- It is decided **before** the remaining time is reduced.
-- **Fix:** subtract the actual slice first, then set `isCompleted = time <= 0`.
+### 2. ~~Completion flag inverted~~ — FIXED
+- **Location:** `Task.java:31`
+- `isCompleted` is true exactly when the task ran its full remaining time during that slice.
+- Tasks needing another quantum are correctly marked incomplete.
 
-### 3. Queue is modified while iterating it
-- **Location:** `Main.java:53-62`
-- `add()` and `remove()` are called inside an enhanced `for` loop over the same `ArrayDeque`.
-- On JDK 27 the iterator uses a stale size snapshot: re-enqueued tasks are **never revisited** and remain in the queue at the end (observed with task A).
-- On older JDKs this typically throws `ConcurrentModificationException`.
-- **Fix:** iterate with a `while` loop using `poll()` and `offer()`.
+### 3. ~~Queue modified during iteration~~ — FIXED
+- **Location:** `Main.java:53-63`
+- Replaced the enhanced `for` loop with `while (!taskQueue.isEmpty())` using `poll()` and `offer()`.
+- No iterator is invalidated; re-queued tasks are processed correctly.
+- Verified with tasks that need multiple quanta (Test 2).
 
-### 4. Remaining time is tracked incorrectly
-- **Location:** `Main.java:56-57`
-- `task.time -= task.quantum` runs after execution, based on a flag computed before execution.
-- Remaining time can go negative (A ended at `-0.5s`), and is never clamped to zero.
-- Combined with bug #2, fixing the loop alone would re-run short tasks forever.
-- **Fix:** subtract the exact slice that was executed, clamp at zero, then decide completion.
+### 4. ~~Remaining time could go negative~~ — FIXED
+- **Location:** `Main.java:58-62`
+- Subtraction now happens only when a full quantum was executed.
+- The final slice uses the remaining time and completes the task without subtracting.
+
+### 5. ~~Unfinished tasks left in the queue~~ — FIXED
+- The loop continues until the queue is empty; no tasks are dropped.
+- Verified: both test runs end with an empty queue.
 
 ---
 
-## Major
+## Design notes (not correctness bugs)
 
-### 5. Tasks are silently dropped / left in the queue
-- **Location:** `Main.java:53-62`
-- Consequence of bugs #2 and #3: the simulation can end with unfinished tasks still in `taskQueue`.
-- No warning or summary of incomplete tasks is printed.
-
-### 6. Average quantum is unsafe for short tasks
+### 6. Average quantum is input-dependent
 - **Location:** `Main.java:48-49`
-- Quantum is the mean of all task times. Any task shorter than the average receives a slice longer than its remaining time unless clamped.
-- Even with correct slicing, averaging makes the quantum depend on the input set. Standard round-robin uses a fixed/configurable quantum.
+- Quantum is the mean of all task times. Slicing is clamped correctly, so tasks are not overrun, but standard round-robin uses a fixed/configurable quantum.
+- Behaviour changes with the submitted task set: short tasks finish in their first slice while longer tasks use the average.
 
 ### 7. Timer blocks the main thread
 - **Location:** `Task.java:30`, `Timer.java:11-13`
 - `timer.run()` is called directly instead of starting a thread, so each slice blocks `main`.
 - `Timer implements Runnable` is never used as a thread; the interrupt handling is dead code.
-- Sequential simulation is acceptable, but there is no real interleaving or preemption.
+- Acceptable for a sequential simulation, but there is no real interleaving or preemption.
 
 ---
 
@@ -75,31 +86,36 @@
 
 ### 10. No input validation
 - `sc.nextInt()` throws `InputMismatchException` on non-numeric input.
-- `time <= 0` produces zero or negative sleeps; a negative `Thread.sleep` argument throws `IllegalArgumentException`.
-- All-zero times produce a quantum of `0`; the empty-queue case is guarded, but zero-length slices are not.
+- Negative time produces negative sleeps; `Thread.sleep` with a negative value throws `IllegalArgumentException`.
+- With non-negative input and all times `0`, the quantum is `0` but every task completes immediately, so there is no hang.
+- A quantum ≤ 0 with positive remaining time can loop forever (reachable with negative input); reject `time <= 0` at entry.
 
-### 11. State is not normalized
-- Completed tasks keep a non-zero `time` field.
-- `isCompleted` is set before remaining time is updated.
-- Task state is split between `Task` and `Main`, with no single source of truth.
+### 11. State is not fully normalized
+- Completed tasks keep a non-zero `time` field; the final slice is never written back as `0`.
+- Task state is split between `Task` and `Main` (execution vs. remaining-time subtraction).
+- The current split works, but it is fragile if the slice logic changes.
 
 ### 12. Redundant boolean expressions
-- **Location:** `Main.java:45`, `Task.java:32`
+- **Location:** `Main.java:45`, `Task.java:31`
 - `condition ? true : false` is equivalent to `condition`.
+
+### 13. Redundant local variable
+- **Location:** `Main.java:60`
+- `Task newTask = task;` adds nothing; `taskQueue.offer(task);` is sufficient.
 
 ---
 
-## Suggested core loop
+## Current core loop
 
 ```java
 while (!taskQueue.isEmpty()) {
     Task task = taskQueue.poll();
 
-    double slice = Math.min(task.time, task.quantum);
-    task.execute(slice);            // sleep for slice, then task.time -= slice
+    task.execute();                 // executes min(task.time, task.quantum)
 
-    if (task.time > 0) {
-        taskQueue.offer(task);      // not finished: back to the tail
+    if (!task.isCompleted) {
+        task.time -= task.quantum;  // slice == quantum in this branch
+        taskQueue.offer(task);      // back to the tail
     }
 }
 ```
