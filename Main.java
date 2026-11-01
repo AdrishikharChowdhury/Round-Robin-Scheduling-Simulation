@@ -1,4 +1,5 @@
 import java.util.ArrayDeque;
+import java.util.InputMismatchException;
 import java.util.Queue;
 import java.util.Scanner;
 
@@ -18,14 +19,51 @@ class Main {
         return sum / taskQueue.size();
     }
 
-    static Queue<Task> create(Queue<Task> taskQueue) {
-        System.out.print("Enter the Task Title: ");
-        String title = sc.nextLine();
-        System.out.print("Enter the time to execute: ");
-        int time = sc.nextInt();
+    static double invalidTimeHandling() {
+        double time = 0.0;
+        while (true) {
+            try {
+                time = sc.nextInt();
+
+                if (time <= 0) {
+                    throw new NegativeTimeError("Negative Time Not Allowed");
+                } else {
+                    break;
+                }
+            } catch (InputMismatchException e) {
+                System.out.println("Input Mismatch Found, Try Again...");
+                sc.next();
+                continue;
+            } catch (NegativeTimeError e) {
+                System.out.println("Negative Time Found, Try Again...");
+                continue;
+            }
+        }
         sc.nextLine();
-        Task newTask = new Task(title, time, 5);
+        return time;
+    }
+
+    static String invalidTitleHandling() {
+        String title;
+        do {
+            title = sc.nextLine();
+        } while (title.isEmpty());
+        return title;
+    }
+
+    static Queue<Task> create(Queue<Task> taskQueue) {
+        double time;
+        String title;
+
+        System.out.print("Enter the Task Title: ");
+        title = invalidTitleHandling();
+        
+        System.out.print("Enter the time to execute: ");
+        time = invalidTimeHandling();
+
+        Task newTask = new Task(title, time);
         taskQueue.add(newTask);
+
         return taskQueue;
     }
 

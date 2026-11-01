@@ -4,10 +4,9 @@ public class Task {
     double time, quantum;
     boolean isCompleted;
 
-    public Task(String title, double time, double quantum) {
+    public Task(String title, double time) {
         this.title = title;
         this.time = time * 1000;
-        this.quantum = quantum * 1000;
         this.isCompleted = false;
         System.out.printf(
             "The Task is %s and set for %.2f seconds\n",
@@ -18,8 +17,8 @@ public class Task {
 
     void execute() {
         Timer timer;
-        boolean taskNearOver = this.quantum < this.time ? false : true;
-        double time = taskNearOver ? this.time : this.quantum;
+        this.isCompleted = this.quantum < this.time ? false : true;
+        double time = this.isCompleted ? this.time : this.quantum;
 
         timer = new Timer(time);
         System.out.printf(
@@ -28,6 +27,5 @@ public class Task {
             time / 1000
         );
         timer.run();
-        this.isCompleted = taskNearOver ? true : false;
     }
 }
