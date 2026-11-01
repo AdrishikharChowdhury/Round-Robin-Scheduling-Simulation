@@ -29,13 +29,9 @@ class Main {
         return taskQueue;
     }
 
-    public static void main(String[] args) {
+    static Queue<Task> choice(Queue<Task> taskQueue) {
         boolean isRunning = true;
         String choice = "Y";
-        Queue<Task> taskQueue = new ArrayDeque<>();
-
-        System.out.println("Round Robin Schedule Simulation");
-        System.out.println("Add tasks to make the simulation");
 
         do {
             taskQueue = create(taskQueue);
@@ -45,11 +41,10 @@ class Main {
                 choice.startsWith("Y") || choice.startsWith("y") ? true : false;
         } while (isRunning);
 
-        double quantum = quantumCreate(taskQueue);
-        taskQueue.forEach(task -> task.quantum = quantum);
+        return taskQueue;
+    }
 
-        System.out.println("Now lets start the simulation");
-
+    static void executionOfAlgorithm(Queue<Task> taskQueue) {
         while (!taskQueue.isEmpty()) {
             Task task = taskQueue.poll();
 
@@ -57,9 +52,27 @@ class Main {
 
             if (!task.isCompleted) {
                 task.time -= task.quantum;
-                Task newTask = task;
-                taskQueue.offer(newTask);
+                System.out.printf(
+                    "Quantum Ended & Task Inserted at the EOQ with %.2f seconds\n",
+                    task.time / 1000
+                );
+                taskQueue.offer(task);
             }
         }
+    }
+
+    public static void main(String[] args) {
+        Queue<Task> taskQueue = new ArrayDeque<>();
+
+        System.out.println("Round Robin Schedule Simulation");
+        System.out.println("Add tasks to make the simulation");
+
+        taskQueue = choice(taskQueue);
+
+        double quantum = quantumCreate(taskQueue);
+        taskQueue.forEach(task -> task.quantum = quantum);
+
+        System.out.println("Now lets start the simulation");
+        executionOfAlgorithm(taskQueue);
     }
 }
