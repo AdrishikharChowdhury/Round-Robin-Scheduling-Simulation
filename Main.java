@@ -57,12 +57,11 @@ class Main {
 
         System.out.print("Enter the Task Title: ");
         title = invalidTitleHandling();
-        
+
         System.out.print("Enter the time to execute: ");
         time = invalidTimeHandling();
 
-        Task newTask = new Task(title, time);
-        taskQueue.add(newTask);
+        taskQueue.add(new Task(title, time));
 
         return taskQueue;
     }
@@ -75,8 +74,7 @@ class Main {
             taskQueue = create(taskQueue);
             System.out.print("Do you want to add more? (Y/n): ");
             choice = sc.nextLine();
-            isRunning =
-                choice.startsWith("Y") || choice.startsWith("y") ? true : false;
+            isRunning = choice.startsWith("Y") || choice.startsWith("y");
         } while (isRunning);
 
         return taskQueue;
