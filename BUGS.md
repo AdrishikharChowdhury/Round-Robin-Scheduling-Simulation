@@ -1,6 +1,6 @@
 # Bugs — Round Robin Scheduling Simulation
 
-**Status:** No known critical bugs. Slicing and completion logic are correct, and the scheduler now drains the queue by re-queueing incomplete tasks with `poll()` / `offer()`.
+**Status:** No known critical bugs. Slicing and completion logic are correct, and the scheduler drains the queue by re-queueing incomplete tasks with `poll()` / `offer()`.
 
 **Verified on:** OpenJDK 27.
 
@@ -32,41 +32,49 @@ The queue is empty after both runs, and the execution order is correct round-rob
 ## Fixed
 
 ### 1. ~~Slice logic inverted~~ — FIXED
-- **Location:** `Task.java:21-22`
-- `taskNearOver` is now true when `quantum >= time`.
-- The slice is remaining time when the task fits, otherwise the quantum: effectively `min(time, quantum)`.
+- **Location:** `Task.java:20-21`
+- `isCompleted` is true when `quantum >= time` (task fits in one quantum).
+- The slice is `min(time, quantum)`: uses remaining time if fits, otherwise the quantum.
 
 ### 2. ~~Completion flag inverted~~ — FIXED
-- **Location:** `Task.java:31`
-- `isCompleted` is true exactly when the task ran its full remaining time during that slice.
+- **Location:** `Task.java:20`
+- `isCompleted` is true exactly when the task runs its full remaining time in that slice.
 - Tasks needing another quantum are correctly marked incomplete.
 
 ### 3. ~~Queue modified during iteration~~ — FIXED
-- **Location:** `Main.java:53-63`
-- Replaced the enhanced `for` loop with `while (!taskQueue.isEmpty())` using `poll()` and `offer()`.
+- **Location:** `Main.java:86-100`
+- Replaced iteration with `while (!taskQueue.isEmpty())` using `poll()` and `offer()`.
 - No iterator is invalidated; re-queued tasks are processed correctly.
-- Verified with tasks that need multiple quanta (Test 2).
 
 ### 4. ~~Remaining time could go negative~~ — FIXED
-- **Location:** `Main.java:58-62`
-- Subtraction now happens only when a full quantum was executed.
-- The final slice uses the remaining time and completes the task without subtracting.
+- **Location:** `Main.java:91-99`
+- Subtraction (`task.time -= task.quantum`) happens only when `!task.isCompleted`.
+- The final slice uses remaining time and completes the task without subtracting.
 
 ### 5. ~~Unfinished tasks left in the queue~~ — FIXED
 - The loop continues until the queue is empty; no tasks are dropped.
-- Verified: both test runs end with an empty queue.
+
+### 6. ~~No input validation~~ — FIXED
+- **Location:** `Main.java:22-44`, `NegativeTimeError.java`
+- `invalidTimeHandling()` validates input with `try/catch` for `InputMismatchException` and rejects non-positive times with `NegativeTimeError`.
+- `invalidTitleHandling()` ensures non-empty titles.
+
+### 7. ~~Hardcoded quantum value passed to constructor~~ — FIXED
+- **Location:** `Task.java:7`, `Main.java:64, 110-111`
+- `Task` constructor now takes only `(String title, double time)`. Quantum is assigned after all tasks are added via `taskQueue.forEach(task -> task.quantum = quantum)`.
+- No dead `new Task(title, time, 5)` call remains.
 
 ---
 
 ## Design notes (not correctness bugs)
 
-### 6. Average quantum is input-dependent
-- **Location:** `Main.java:48-49`
+### 8. Average quantum is input-dependent
+- **Location:** `Main.java:10-20, 110`
 - Quantum is the mean of all task times. Slicing is clamped correctly, so tasks are not overrun, but standard round-robin uses a fixed/configurable quantum.
 - Behaviour changes with the submitted task set: short tasks finish in their first slice while longer tasks use the average.
 
-### 7. Timer blocks the main thread
-- **Location:** `Task.java:30`, `Timer.java:11-13`
+### 9. Timer blocks the main thread
+- **Location:** `Task.java:29`, `Timer.java:10-18`
 - `timer.run()` is called directly instead of starting a thread, so each slice blocks `main`.
 - `Timer implements Runnable` is never used as a thread; the interrupt handling is dead code.
 - Acceptable for a sequential simulation, but there is no real interleaving or preemption.
@@ -75,20 +83,10 @@ The queue is empty after both runs, and the execution order is correct round-rob
 
 ## Minor
 
-### 8. Units are misleading and handled in two places
-- `Task` stores milliseconds (`time * 1000`, `quantum * 1000`).
+### 10. Units are misleading and handled in two places
+- `Task` stores milliseconds (`time * 1000`, quantum set in milliseconds).
 - `Timer.sec` actually holds **milliseconds**, while its name and `sec / 1000` output imply seconds.
 - `Main` overwrites each task's quantum with the millisecond value from `quantumCreate()`, so the constructor's unit is not the source of truth.
-
-### 9. Hardcoded quantum value is dead code
-- **Location:** `Main.java:27`
-- `new Task(title, time, 5)` passes quantum `5`, which is immediately overwritten at `Main.java:49`.
-
-### 10. No input validation
-- `sc.nextInt()` throws `InputMismatchException` on non-numeric input.
-- Negative time produces negative sleeps; `Thread.sleep` with a negative value throws `IllegalArgumentException`.
-- With non-negative input and all times `0`, the quantum is `0` but every task completes immediately, so there is no hang.
-- A quantum ≤ 0 with positive remaining time can loop forever (reachable with negative input); reject `time <= 0` at entry.
 
 ### 11. State is not fully normalized
 - Completed tasks keep a non-zero `time` field; the final slice is never written back as `0`.
@@ -96,12 +94,12 @@ The queue is empty after both runs, and the execution order is correct round-rob
 - The current split works, but it is fragile if the slice logic changes.
 
 ### 12. Redundant boolean expressions
-- **Location:** `Main.java:45`, `Task.java:31`
-- `condition ? true : false` is equivalent to `condition`.
+- **Location:** `Main.java:78-80`
+- `choice.startsWith("Y") || choice.startsWith("y") ? true : false` is equivalent to `choice.startsWith("Y") || choice.startsWith("y")`.
 
 ### 13. Redundant local variable
-- **Location:** `Main.java:60`
-- `Task newTask = task;` adds nothing; `taskQueue.offer(task);` is sufficient.
+- **Location:** `Main.java:64`
+- `Task newTask = new Task(title, time); taskQueue.add(newTask);` could be simplified to `taskQueue.add(new Task(title, time));`.
 
 ---
 
@@ -115,6 +113,10 @@ while (!taskQueue.isEmpty()) {
 
     if (!task.isCompleted) {
         task.time -= task.quantum;  // slice == quantum in this branch
+        System.out.printf(
+            "Quantum Ended & Task Inserted at the EOQ with %.2f seconds\n",
+            task.time / 1000
+        );
         taskQueue.offer(task);      // back to the tail
     }
 }
